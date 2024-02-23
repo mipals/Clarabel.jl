@@ -73,7 +73,11 @@ mutable struct DirectLDLKKTSolver{T} <: AbstractKKTSolver{T}
 
         #KKT will be triu data only, but we will want
         #the following to allow products like KKT*x
-        KKTsym = Symmetric(KKT)
+        if kktshape == :triu
+            KKTsym = Symmetric(KKT)
+        else #:tril
+            KKTsym = Symmetric(KKT,:L)
+        end
 
         #the LDL linear solver engine
         ldlsolver = ldlsolverT{T}(KKT,Dsigns,settings)
