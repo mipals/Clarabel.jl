@@ -6,17 +6,17 @@ module Clarabel
     const DefaultInt   = LinearAlgebra.BlasInt
     const IdentityMatrix = UniformScaling{Bool}
 
-    #internal constraint RHS limits.  This let block 
-    #hides the INFINITY field in the module and makes 
+    #internal constraint RHS limits.  This let block
+    #hides the INFINITY field in the module and makes
     #it accessible only via the get/set provided
-    let 
+    let
         _INFINITY_DEFAULT = 1e20
         INFINITY = _INFINITY_DEFAULT
         global default_infinity() = INFINITY = _INFINITY_DEFAULT;
         global set_infinity(v::Float64) = INFINITY =  Float64(v)
         global get_infinity() = INFINITY
-    end 
-    
+    end
+
     #version / release info
     include("./version.jl")
 
@@ -61,7 +61,7 @@ module Clarabel
     include("./cones/coneops_psdtrianglecone.jl")
     include("./cones/coneops_expcone.jl")
     include("./cones/coneops_powcone.jl")
-    include("./cones/coneops_genpowcone.jl")        #Generalized power cone 
+    include("./cones/coneops_genpowcone.jl")        #Generalized power cone
     include("./cones/coneops_compositecone.jl")
     include("./cones/coneops_nonsymmetric_common.jl")
     include("./cones/coneops_symmetric_common.jl")
@@ -70,15 +70,16 @@ module Clarabel
     include("./utils/mathutils.jl")
     include("./utils/csc_assembly.jl")
 
-    #optional dependencies.  
-    #NB: This __init__ function and its @require statements 
-    #should be removed upon update of this package for use 
-    #with Julia v1.10+, after which weakdeps / external 
-    #dependencies will be natively supported 
+    #optional dependencies.
+    #NB: This __init__ function and its @require statements
+    #should be removed upon update of this package for use
+    #with Julia v1.10+, after which weakdeps / external
+    #dependencies will be natively supported
     function __init__()
         @require Pardiso="46dd5b70-b6fb-5a00-ae2d-e8fea33afaf2" begin
-            include("./kktsolvers/direct-ldl/directldl_mklpardiso.jl")  
-        end 
+            include("./kktsolvers/direct-ldl/directldl_mklpardiso.jl")
+            include("./kktsolvers/direct-ldl/directldl_panuapardiso.jl")
+        end
     end
 
     #MathOptInterface for JuMP/Convex.jl
@@ -94,7 +95,7 @@ module Clarabel
     #precompile minimal MOI / native examples
     using SnoopPrecompile
     include("./precompile.jl")
-    redirect_stdout(devnull) do; 
+    redirect_stdout(devnull) do;
         SnoopPrecompile.@precompile_all_calls begin
             __precompile_native()
             __precompile_moi()

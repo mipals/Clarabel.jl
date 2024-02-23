@@ -62,7 +62,7 @@ mutable struct DirectLDLKKTSolver{T} <: AbstractKKTSolver{T}
         work_dx = Vector{T}(undef,n+m+p)
 
         #the expected signs of D in LDL
-        Dsigns = Vector{Int}(undef,n+m+p)     
+        Dsigns = Vector{Int}(undef,n+m+p)
         _fill_Dsigns!(Dsigns,m,n,map)
 
         #updates to the diagonal of KKT will be
@@ -105,7 +105,7 @@ function _get_ldlsolver_config(settings::Settings)
     kktshape = required_matrix_shape(ldlsolverT)
 
     (kktshape,ldlsolverT)
-end 
+end
 
 
 function _fill_Dsigns!(Dsigns,m,n,map)
@@ -119,7 +119,7 @@ function _fill_Dsigns!(Dsigns,m,n,map)
     # assign D signs for sparse expansion cones
     for thismap in map.sparse_maps
         thisp = pdim(thismap)
-        Dsigns[p:(p+thisp-1)] .= Clarabel.Dsigns(thismap)   
+        Dsigns[p:(p+thisp-1)] .= Clarabel.Dsigns(thismap)
         p += thisp
     end
 end
@@ -227,11 +227,11 @@ function _kktsolver_update_inner!(
     scaleFcn  = (index,scale)  -> _scale_values!(ldlsolver,KKT,index,scale)
 
     for cone in cones
-        #add sparse expansions columns for sparse cones 
+        #add sparse expansions columns for sparse cones
         if @conedispatch is_sparse_expandable(cone)
             thismap = popfirst!(sparse_map_iter)
             _csc_update_sparsecone(cone,thismap,updateFcn,scaleFcn)
-        end 
+        end
     end
 
     return _kktsolver_regularize_and_refactor!(kktsolver, ldlsolver)
@@ -383,8 +383,8 @@ function  _iterative_refinement(
 
     #compute the initial error
     norme = _get_refine_error!(e,b,KKTsym,x)
-           
-    isfinite(norme) || return is_success = false 
+
+    isfinite(norme) || return is_success = false
 
     for i = 1:IR_maxiter
 
@@ -402,7 +402,7 @@ function  _iterative_refinement(
         @. dx += x
 
         norme = _get_refine_error!(e,b,KKTsym,dx)
-        isfinite(norme) || return is_success = false 
+        isfinite(norme) || return is_success = false
 
         improved_ratio = lastnorme/norme
         if(improved_ratio <  IR_stopratio)
@@ -419,7 +419,7 @@ function  _iterative_refinement(
     # following possible swaps.   This is not necessary in the
     # Rust implementation since implementation there is via borrow
     (kktsolver.x,kktsolver.work2) = (x,dx)
- 
+
     #NB: "success" means only that we had a finite valued result
     return is_success = true
 end

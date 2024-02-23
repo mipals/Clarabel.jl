@@ -64,7 +64,7 @@ function kkt_update!(
     #update the linear solver with new cones
     is_success  = kktsolver_update!(kktsystem.kktsolver,cones)
 
-    #bail if the factorization has failed 
+    #bail if the factorization has failed
     is_success || return is_success
 
     #calculate KKT solution for constant terms
@@ -146,7 +146,7 @@ function kkt_solve!(
     #-----------
     @. workx = rhs.x
 
-    # compute the vector c in the step equation HₛΔz + Δs = -c,  
+    # compute the vector c in the step equation HₛΔz + Δs = -c,
     # with shortcut in affine case
     Δs_const_term = kktsystem.work_conic
 
