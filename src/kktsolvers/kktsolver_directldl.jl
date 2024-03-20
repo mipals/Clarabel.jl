@@ -73,11 +73,8 @@ mutable struct DirectLDLKKTSolver{T} <: AbstractKKTSolver{T}
 
         #KKT will be triu data only, but we will want
         #the following to allow products like KKT*x
-        if kktshape == :triu
-            KKTsym = Symmetric(KKT)
-        else #:tril
-            KKTsym = Symmetric(KKT,:L)
-        end
+        uplo = kktshape == :tril ? :L : :U
+        KKTsym = Symmetric(KKT,uplo)
 
         #the LDL linear solver engine
         ldlsolver = ldlsolverT{T}(KKT,Dsigns,settings)
@@ -366,6 +363,22 @@ function kktsolver_solve!(
 
     return is_success
 end
+
+# update methods for P and A 
+function kktsolver_update_P!(
+    kktsolver::DirectLDLKKTSolver{T},
+    P::SparseMatrixCSC{T}
+) where{T}
+    _update_values!(kktsolver.ldlsolver,kktsolver.KKT,kktsolver.map.P,P.nzval)
+end
+
+function kktsolver_update_A!(
+    kktsolver::DirectLDLKKTSolver{T},
+    A::SparseMatrixCSC{T}
+) where{T}
+    _update_values!(kktsolver.ldlsolver,kktsolver.KKT,kktsolver.map.A,A.nzval)
+end
+
 
 function  _iterative_refinement(
     kktsolver::DirectLDLKKTSolver{T},
