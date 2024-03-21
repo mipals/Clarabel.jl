@@ -10,24 +10,34 @@ struct PanuaPardisoDirectLDLSolver{T} <: AbstractDirectLDLSolver{T}
         #NB: ignore Dsigns here because pardiso doesn't
         #use information about the expected signs
 
-        #make our AMD ordering outside of the solver
-        perm = amd(KKT)
 
-        #a fake version of K with no data but the right dimensions.
-        #required as a placeholder in calls to pardiso solves
-        (m,n) = size(KKT)
-        Kfake = sparse([],[],T[],m,n)
 
         #make a pardiso object and perform logical factor
         ps = Pardiso.PardisoSolver()
         Pardiso.set_matrixtype!(ps, Pardiso.REAL_SYM_INDEF)
         Pardiso.pardisoinit(ps)
-        Pardiso.fix_iparm!(ps, :N)
         Pardiso.set_phase!(ps, Pardiso.ANALYSIS)
-        Pardiso.set_perm!(ps, perm)
+        Pardiso.fix_iparm!(ps, :N)
+
+        # Turn off IR from Clarabel. Instead use the IR one from directly from Panua. 
+        # Some caveats: https://github.com/oxfordcontrol/Clarabel.jl/issues/161
+        settings.iterative_refinement_enable = false
+        Pardiso.set_iparm!(ps,8,settings.iterative_refinement_max_iter)
+
+        # PanuaPardiso can handle rank deficient problems, so no need to regularize
+        # settings.static_regularization_enable = false  
+
+        # Set permuation
+        # perm = amd(KKT)
+        # Pardiso.set_perm!(ps, perm)
+        
+        # Debugging parameters
+        # Pardiso.set_msglvl!(ps, Pardiso.MESSAGE_LEVEL_ON)
+
+        # Create symbolic factorization with fake rhs
         Pardiso.pardiso(ps, KKT, [1.])  #RHS irrelevant for ANALYSIS
 
-        return new(ps,Kfake)
+        return new(ps,KKT)
     end
 end
 
@@ -69,10 +79,11 @@ function refactor!(ldlsolver::PanuaPardisoDirectLDLSolver{T},K::SparseMatrixCSC{
     # here just means that it didn't fail outright, although
     # the factorization could still be garbage
 
-    # Recompute the numeric factorization susing fake RHS
+    # Recompute the numeric factorization using fake RHS
     try
         Pardiso.set_phase!(ldlsolver.ps, Pardiso.NUM_FACT)
         Pardiso.pardiso(ldlsolver.ps, K, [1.])
+        # ldlsolver.Kfake = K
         return is_success = true
     catch
         return is_success = false
@@ -90,7 +101,7 @@ function solve!(
 
     ps  = ldlsolver.ps
 
-    #We don't need the KKT system here since it is already
+    # We don't need the KKT system here since it is already
     #factored, but Pardiso still wants an argument with the
     #correct dimension.   It seems happy for us to pass a
     #placeholder with (almost) no data in it though.
