@@ -1,37 +1,28 @@
-using AMD
-
 struct PanuaPardisoDirectLDLSolver{T} <: AbstractDirectLDLSolver{T}
 
     ps::Pardiso.PardisoSolver
-    Kfake::SparseMatrixCSC{T}
+    KKT::SparseMatrixCSC{T}
 
     function PanuaPardisoDirectLDLSolver{T}(KKT::SparseMatrixCSC{T},Dsigns,settings) where {T}
 
-        #NB: ignore Dsigns here because pardiso doesn't
+        #NB: ignore Dsigns here because PanuaPardiso doesn't
         #use information about the expected signs
 
-
-
-        #make a pardiso object and perform logical factor
+        #make a PanuaPardiso object and perform symbolic factorization
         ps = Pardiso.PardisoSolver()
         Pardiso.set_matrixtype!(ps, Pardiso.REAL_SYM_INDEF)
         Pardiso.pardisoinit(ps)
         Pardiso.set_phase!(ps, Pardiso.ANALYSIS)
         Pardiso.fix_iparm!(ps, :N)
 
-        # Turn off IR from Clarabel. Instead use the IR one from directly from Panua. 
-        # Some caveats: https://github.com/oxfordcontrol/Clarabel.jl/issues/161
-        settings.iterative_refinement_enable = false
-        Pardiso.set_iparm!(ps,8,settings.iterative_refinement_max_iter)
+        # Completely turn of iterative refinement from Panua. 
+        Pardiso.set_iparm!(ps,8,-99)
 
-        # PanuaPardiso can handle rank deficient problems, so no need to regularize
-        # settings.static_regularization_enable = false  
-
-        # Set permuation
+        # Possible to specify own permuation. For now let Panua use its internal ordering (METIS)
         # perm = amd(KKT)
         # Pardiso.set_perm!(ps, perm)
         
-        # Debugging parameters
+        # For debugging purposes you can turn on the messaging
         # Pardiso.set_msglvl!(ps, Pardiso.MESSAGE_LEVEL_ON)
 
         # Create symbolic factorization with fake rhs
@@ -73,17 +64,10 @@ end
 #refactor the linear system
 function refactor!(ldlsolver::PanuaPardisoDirectLDLSolver{T},K::SparseMatrixCSC{T}) where{T}
 
-    # MKL is quite robust and will usually produce some
-    # kind of factorization unless there is an explicit
-    # zero pivot or some other nastiness.   "success"
-    # here just means that it didn't fail outright, although
-    # the factorization could still be garbage
-
     # Recompute the numeric factorization using fake RHS
     try
         Pardiso.set_phase!(ldlsolver.ps, Pardiso.NUM_FACT)
         Pardiso.pardiso(ldlsolver.ps, K, [1.])
-        # ldlsolver.Kfake = K
         return is_success = true
     catch
         return is_success = false
@@ -101,13 +85,13 @@ function solve!(
 
     ps  = ldlsolver.ps
 
-    # We don't need the KKT system here since it is already
-    #factored, but Pardiso still wants an argument with the
-    #correct dimension.   It seems happy for us to pass a
-    #placeholder with (almost) no data in it though.
-    Kfake = ldlsolver.Kfake
+    # We need to pass KKT to pardiso even if it already factored.
+    #the reason being that the matrix is used for iterative refinement.
+    #note that we for now disable IR and let Clarabel handle that, so in this 
+    #case the matrix does not matter (as no IR is performed in PanuaPardiso)
+    KKT = ldlsolver.KKT
 
     Pardiso.set_phase!(ps, Pardiso.SOLVE_ITERATIVE_REFINE)
-    Pardiso.pardiso(ps, x, Kfake, b)
+    Pardiso.pardiso(ps, x, KKT, b)
 
 end
