@@ -61,7 +61,7 @@ function __precompile_native()
     #separate initialization one for PSD cones as we don't support PSD and the nonsymmetric cones simultaneously at present
     cones = [
         Clarabel.PSDTriangleConeT(1),
-        Clarabel.PSDTriangleConeT(3) # Compile also for the 3x3 case  
+        Clarabel.PSDTriangleConeT(3)
         ];
     nvars = sum(Clarabel.nvars.(cones))
     P = A = sparse(I(nvars)*1.)
