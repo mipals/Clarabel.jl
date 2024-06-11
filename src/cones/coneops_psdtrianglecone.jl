@@ -19,7 +19,11 @@ function margins(
     else
         Z = K.data.workmat1
         svec_to_mat!(Z,z)
-        e = eigvals!(Hermitian(Z))  #NB: GenericLinearAlgebra doesn't support eigvals!(::Symmetric(...))
+        if typeof(Z) <: StaticMatrix
+            e = eigvals(Hermitian(Z))       # NB: StaticArrays does not have eigvals!
+        else
+            e = eigvals!(Hermitian(Z))    # NB: GenericLinearAlgebra doesn't support eigvals!(::Symmetric(...))
+        end
         α = minimum(e)  #minimum eigenvalue. 
     end
     β = reduce((x,y) -> y > 0 ? x + y : x, e, init = zero(T)) # = sum(e[e.>0]) (no alloc)
@@ -37,7 +41,7 @@ function scaled_unit_shift!(
 
     #adds αI to the vectorized triangle,
     #at elements [1,3,6....n(n+1)/2]
-    for k = 1:K.n
+    @inbounds for k = 1:K.n
         z[triangular_index(k)] += α
     end
 
@@ -95,19 +99,21 @@ function update_scaling!(
     map((M,v)->svec_to_mat!(M,v),(S,Z),(s,z))
 
     #compute Cholesky factors (PG: this is allocating)
-    f.chol1 = cholesky!(S, check = false)
-    f.chol2 = cholesky!(Z, check = false)
+    # f.chol1 = cholesky!(S, check = false)
+    # f.chol2 = cholesky!(Z, check = false)
+    f.chol1 = cholesky(S, check = false) # Less allocation for StaticArrays.jl
+    f.chol2 = cholesky(Z, check = false) # Less allocation for StaticArrays.jl
 
     # bail if the cholesky factorization fails
     if !(issuccess(f.chol1) && issuccess(f.chol2))
         return is_scaling_success = false
     end
 
-    (L1,L2) = (f.chol1.L,f.chol2.L)
+    (L1,U2) = (f.chol1.L,f.chol2.U)
 
     #SVD of L2'*L1,
     tmp = f.workmat1;
-    mul!(tmp,L2',L1)   
+    mul!(tmp,U2,L1)   
     f.SVD = svd(tmp)
 
     #assemble λ (diagonal), R and Rinv.
@@ -116,14 +122,17 @@ function update_scaling!(
 
     #f.R = L1*(f.SVD.V)*f.Λisqrt
     mul!(f.R,L1,f.SVD.V);
-    mul!(f.R,f.R,f.Λisqrt) #mul! can take R twice because Λ is diagonal
+    # mul!(f.R,f.R,f.Λisqrt) #mul! can take R twice because Λ is diagonal
+    rmul!(f.R,f.Λisqrt)
+
 
     #f.Rinv .= f.Λisqrt*(f.SVD.U)'*L2'
-    mul!(f.Rinv,f.SVD.U',L2')
-    mul!(f.Rinv,f.Λisqrt,f.Rinv) #mul! can take Rinv twice because Λ is diagonal
+    mul!(f.Rinv,f.SVD.U',U2)
+    # mul!(f.Rinv,f.Λisqrt,f.Rinv) #mul! can take Rinv twice because Λ is diagonal
+    lmul!(f.Λisqrt,f.Rinv)
 
     #compute R*R' (upper triangular part only)
-    RRt = f.workmat1;
+    RRt = f.workmat1
     RRt .= zero(T)
     if T <: LinearAlgebra.BlasFloat
         LinearAlgebra.BLAS.syrk!('U', 'N', one(T), f.R, zero(T), RRt)
@@ -197,7 +206,7 @@ function affine_ds!(
     ds .= zero(T)
 
     #same as X = Λ*Λ
-    for k = 1:K.n
+    @inbounds for k = 1:K.n
         ds[triangular_index(k)] = K.data.λ[k]^2
     end
 
@@ -344,15 +353,20 @@ function λ_inv_circ_op!(
 ) where {T}
 
     (X,Z) = (K.data.workmat1,K.data.workmat2)
-    map((M,v)->svec_to_mat!(M,v),(X,Z),(x,z))
-
+    map((M,v)->svec_to_mat!(M,v),(Z,),(2z,)) # NB Two-times z
     λ = K.data.λ
-    for i = 1:K.n
-        for j = 1:K.n
-            X[i,j] = 2*Z[i,j]/(λ[i] + λ[j])
-        end
-    end
-    mat_to_svec!(x,X)
+    X .= λ .+ λ'
+    Z ./= X
+    mat_to_svec!(x,Z)
+
+    # This does not play nice with StaticArrays.jl
+    # λ = K.data.λ
+    # @inbounds for i = 1:K.n
+    #     @inbounds for j = 1:K.n
+    #         X[i,j] = 2*Z[i,j]/(λ[i] + λ[j])
+    #     end
+    # end
+    # mat_to_svec!(x,X)
 
     return nothing
 end
@@ -369,22 +383,24 @@ function circ_op!(
     z::AbstractVector{T}
 ) where {T}
 
-    (Y,Z) = (K.data.workmat1,K.data.workmat2)
+    (Y,Z,X) = (K.data.workmat1,K.data.workmat2,K.data.workmat3)
     map((M,v)->svec_to_mat!(M,v),(Y,Z),(y,z))
-
-    X = K.data.workmat3;
 
     #X  .= (Y*Z + Z*Y)/2 
     # NB: Y and Z are both symmetric
     if T <: LinearAlgebra.BlasFloat
         LinearAlgebra.BLAS.syr2k!('U', 'N', T(0.5), Y, Z, zero(T), X)
+        mat_to_svec!(x,Symmetric(X))
     else 
-        X .= (Y*Z + Z*Y)/2
+        # X .= (Y*Z + Z*Y)/2
+        mul!(X,Y,Z)
+        mat_to_svec!(x,X)
     end
-    mat_to_svec!(x,Symmetric(X))
 
     return nothing
 end
+
+
 
 # implements x = y \ z for the SDP cone
 function inv_circ_op!(
@@ -426,14 +442,14 @@ function mul_Wx_inner(
     map((M,v)->svec_to_mat!(M,v),(X,Y),(x,y))
 
     if is_transpose === :T
-        #Y .= α*(R*X*R')                #W^T*x    or....
-        # Y .= α*(Rinv*X*Rinv') + βY    #W^{-T}*x
-        mul!(tmp,X,Rx',one(T),zero(T))
+        # Y .= α*(R*X*R')               # W^T*x    or....
+        # Y .= α*(Rinv*X*Rinv') + βY    # W^{-T}*x
+        mul!(tmp,X,Rx')
         mul!(Y,Rx,tmp,α,β)
     else  # :N
-        #Y .= α*(R'*X*R)                #W*x       or...
-        # Y .= α*(Rinv'*X*Rinv) + βY    #W^{-1}*x
-        mul!(tmp,Rx',X,one(T),zero(T))
+        # Y .= α*(R'*X*R)               # W*x       or...
+        # Y .= α*(Rinv'*X*Rinv) + βY    # W^{-1}*x
+        mul!(tmp,Rx',X)
         mul!(Y,tmp,Rx,α,β)
     end
 
@@ -442,9 +458,10 @@ function mul_Wx_inner(
     return nothing
 end
 
+
 function step_length_psd_component(
     workΔ::Matrix{T},
-    d::Vector{T},
+    d::AbstractVector{T},
     Λisqrt::Diagonal{T},
     αmax::T
 ) where {T}
@@ -472,8 +489,33 @@ function step_length_psd_component(
 
 end
 
+# StaticArrays do not have eigvals! so requires a different function
+function step_length_psd_component(
+    workΔ::MMatrix{n,n,T,m},
+    d::AbstractVector{T},
+    Λisqrt::Diagonal{T},
+    αmax::T
+) where {T,m,n}
+
+    if length(d) == 0
+        γ = floatmax(T)
+    else 
+        svec_to_mat!(workΔ,d)
+        # lrscale!(Λisqrt.diag,workΔ,Λisqrt.diag)
+        rmul!(lmul!(Λisqrt,workΔ),Λisqrt)
+        γ = eigvals(Hermitian(workΔ))[1]
+    end
+
+    if γ < 0
+        return min(inv(-γ),αmax)
+    else
+        return αmax
+    end
+
+end
+
 #make a matrix view from a vectorized input
-function svec_to_mat!( M::AbstractMatrix{T}, x::AbstractVector{T}) where {T}
+function svec_to_mat!(M::AbstractMatrix{T}, x::AbstractVector{T}) where {T}
 
     ISQRT2 = inv(sqrt(T(2)))
 
@@ -508,8 +550,8 @@ end
 # a symmtric matrix A with itself, i.e. triu(A ⊗_s A)
 function skron!(
     out::Matrix{T},
-    A::Symmetric{T, Matrix{T}},
-) where {T}
+    A::Symmetric{T, S},
+) where {T, S}
 
     sqrt2  = sqrt(2)
     n      = size(A, 1)
