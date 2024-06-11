@@ -99,10 +99,10 @@ function update_scaling!(
     map((M,v)->svec_to_mat!(M,v),(S,Z),(s,z))
 
     #compute Cholesky factors (PG: this is allocating)
-    # f.chol1 = cholesky!(S, check = false)
-    # f.chol2 = cholesky!(Z, check = false)
-    f.chol1 = cholesky(S, check = false) # Less allocation for StaticArrays.jl
-    f.chol2 = cholesky(Z, check = false) # Less allocation for StaticArrays.jl
+    f.chol1 = cholesky!(S, check = false)
+    f.chol2 = cholesky!(Z, check = false)
+    # f.chol1 = cholesky(S, check = false) # Less allocation for StaticArrays.jl
+    # f.chol2 = cholesky(Z, check = false) # Less allocation for StaticArrays.jl
 
     # bail if the cholesky factorization fails
     if !(issuccess(f.chol1) && issuccess(f.chol2))
