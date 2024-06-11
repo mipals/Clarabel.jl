@@ -122,11 +122,12 @@ SecondOrderCone(args...) = SecondOrderCone{DefaultFloat}(args...)
 # Positive Semidefinite Cone (Scaled triangular form)
 # ------------------------------------
 
+
 mutable struct PSDConeData{T}
 
-    chol1::Option{Cholesky{T,Matrix{T}}}
-    chol2::Option{Cholesky{T,Matrix{T}}}
-    SVD::Option{SVD{T,T,Matrix{T}}}
+    chol1::Option{Factorization{T}}
+    chol2::Option{Factorization{T}}
+    SVD::Option{Factorization{T}}
     λ::Vector{T}
     Λisqrt::Diagonal{T,Vector{T}}
     R::Matrix{T}
@@ -134,10 +135,10 @@ mutable struct PSDConeData{T}
     Hs::Matrix{T}
 
     #workspace for various internal uses
-    workmat1::Matrix{T}
-    workmat2::Matrix{T}
-    workmat3::Matrix{T}
-    workvec::Vector{T}
+    workmat1::AbstractMatrix{T}
+    workmat2::AbstractMatrix{T}
+    workmat3::AbstractMatrix{T}
+    workvec::AbstractVector{T}
 
     function PSDConeData{T}(n::DefaultInt) where {T}
 
@@ -151,10 +152,18 @@ mutable struct PSDConeData{T}
         Rinv   = zeros(T,n,n)
         Hs    = zeros(T,triangular_number(n),triangular_number(n))
 
-        workmat1 = zeros(T,n,n)
-        workmat2 = zeros(T,n,n)
-        workmat3 = zeros(T,n,n)
-        workvec  = zeros(T,triangular_number(n))
+        # The workmatrices are the important bits
+        if n <= 3 && T <: LinearAlgebra.BlasFloat
+            workmat1 = MMatrix{n,n,T,n^2}(zeros(T,n,n))
+            workmat2 = MMatrix{n,n,T,n^2}(zeros(T,n,n))
+            workmat3 = MMatrix{n,n,T,n^2}(zeros(T,n,n))
+            workvec  = MVector{triangular_number(n),T}(zeros(T,triangular_number(n)))
+        else
+            workmat1 = zeros(T,n,n)
+            workmat2 = zeros(T,n,n)
+            workmat3 = zeros(T,n,n)
+            workvec  = zeros(T,triangular_number(n))
+        end
 
         return new(chol1,chol2,SVD,λ,Λisqrt,R,Rinv,
                    Hs,workmat1,workmat2,workmat3,workvec)
