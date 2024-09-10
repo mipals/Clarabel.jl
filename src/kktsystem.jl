@@ -78,7 +78,7 @@ function _kkt_solve_constant_rhs!(
     data::DefaultProblemData{T}
 ) where {T}
 
-    @. kktsystem.workx = -data.q;
+    @. kktsystem.workx = -data.q
 
     kktsolver_setrhs!(kktsystem.kktsolver, kktsystem.workx, data.b)
     is_success = kktsolver_solve!(kktsystem.kktsolver, kktsystem.x2, kktsystem.z2)
@@ -164,7 +164,7 @@ function kkt_solve!(
     #---------------------------------------------------
     #this solves the variable part of reduced KKT system
     kktsolver_setrhs!(kktsystem.kktsolver, workx, workz)
-    is_success = kktsolver_solve!(kktsystem.kktsolver,x1,z1)
+    is_success = kktsolver_solve!(kktsystem.kktsolver,x1,z1) 
 
     if !is_success return false end
 
