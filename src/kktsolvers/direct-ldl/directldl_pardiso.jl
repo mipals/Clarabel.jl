@@ -17,6 +17,9 @@ end
 # Panua Pardiso variant
 struct PanuaPardisoDirectLDLSolver{T} <: AbstractPardisoDirectLDLSolver{T}
     ps::Pardiso.PardisoSolver
+    # In order to avoid re-casting the indexing to i32 
+    colptr::Vector{Int32} 
+    rowval::Vector{Int32}
 
     function PanuaPardisoDirectLDLSolver{T}(KKT::SparseMatrixCSC{T},Dsigns,settings) where {T}
 
@@ -24,7 +27,10 @@ struct PanuaPardisoDirectLDLSolver{T} <: AbstractPardisoDirectLDLSolver{T}
         ps = Pardiso.PardisoSolver()
         pardiso_init(ps,KKT,Dsigns,settings)
         ps.iparm[8]=-99 # No IR
-        return new(ps)
+        # Save colptr and rowval in Int32 as is required by Panua. This make is avoid allocations for each call
+        colptr = convert(Vector{Int32}, KKT.colptr) 
+        rowval = convert(Vector{Int32}, KKT.rowval)
+        return new(ps, colptr, rowval)
     end
 end
 
@@ -84,8 +90,20 @@ function refactor!(ldlsolver::AbstractPardisoDirectLDLSolver{T},K::SparseMatrixC
 
     # Recompute the numeric factorization susing fake RHS
     try 
-        Pardiso.set_phase!(ldlsolver.ps, Pardiso.NUM_FACT)
-        Pardiso.pardiso(ldlsolver.ps, K, [1.])
+        ps = ldlsolver.ps
+        Pardiso.set_phase!(ps, Pardiso.NUM_FACT)
+        # Pardiso.pardiso(ps, K, [1.])
+        ERR = Ref{Int32}(0)
+        ccall(Pardiso.pardiso_f[], Cvoid,
+            (Ptr{Int}, Ptr{Int32}, Ptr{Int32}, Ptr{Int32}, Ptr{Int32},
+            Ptr{Int32}, Ptr{T}, Ptr{Int32}, Ptr{Int32}, Ptr{Int32},
+            Ptr{Int32}, Ptr{Int32}, Ptr{Int32}, Ptr{T}, Ptr{T},
+            Ptr{Int32}, Ptr{Float64}),
+            ps.pt, Ref(ps.maxfct), Ref(Int32(ps.mnum)), Ref(Int32(ps.mtype)), Ref(Int32(ps.phase)),
+            Ref(Int32(size(K,1))), K.nzval, ldlsolver.colptr, ldlsolver.rowval, ps.perm,
+            Ref(Int32(1)), ps.iparm, Ref(Int32(ps.msglvl)), [one(T)], [one(T)],
+            ERR, ps.dparm)
+        Pardiso.check_error(ps, ERR[])
         return is_success = true
     catch 
         return is_success = false
@@ -104,6 +122,16 @@ function solve!(
 
     ps  = ldlsolver.ps
     Pardiso.set_phase!(ps, Pardiso.SOLVE_ITERATIVE_REFINE)
-    Pardiso.pardiso(ps, x, KKT, b)
-
+    # Pardiso.pardiso(ps, x, KKT, b)
+    ERR = Ref{Int32}(0)
+    ccall(Pardiso.pardiso_f[], Cvoid,
+        (Ptr{Int}, Ptr{Int32}, Ptr{Int32}, Ptr{Int32}, Ptr{Int32},
+        Ptr{Int32}, Ptr{T}, Ptr{Int32}, Ptr{Int32}, Ptr{Int32},
+        Ptr{Int32}, Ptr{Int32}, Ptr{Int32}, Ptr{T}, Ptr{T},
+        Ptr{Int32}, Ptr{Float64}),
+        ps.pt, Ref(ps.maxfct), Ref(Int32(ps.mnum)), Ref(Int32(ps.mtype)), Ref(Int32(ps.phase)),
+        Ref(Int32(length(x))), KKT.nzval, ldlsolver.colptr, ldlsolver.rowval, ps.perm,
+        Ref(Int32(1)), ps.iparm, Ref(Int32(ps.msglvl)), b, x,
+        ERR, ps.dparm)
+    Pardiso.check_error(ps, ERR[])
 end
