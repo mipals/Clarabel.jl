@@ -35,7 +35,7 @@ function info_update!(
     norms = norm_scaled(einv,variables.s)
 
     #primal and dual infeasibility residuals.   
-    info.res_primal_inf = norm_scaled(dinv,residuals.rx_inf) / max(one(T), normz)
+    info.res_primal_inf = norm_scaled(dinv,residuals.rx_inf) / max(one(T), normz + normx)
     info.res_dual_inf   = max(
         norm_scaled(dinv,residuals.Px) / max(one(T), normx),
         norm_scaled(einv,residuals.rz_inf) / max(one(T), normx + norms)
